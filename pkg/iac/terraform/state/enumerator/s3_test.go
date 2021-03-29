@@ -74,6 +74,52 @@ func TestS3Enumerator_Enumerate(t *testing.T) {
 			},
 		},
 		{
+			name: "test results with glob",
+			config: config.SupplierConfig{
+				Path: "bucket-name/a/nested/prefix/**/*.tfstate",
+			},
+			mocks: func(client *mocks.FakeS3) {
+				input := &s3.ListObjectsV2Input{
+					Bucket: awssdk.String("bucket-name"),
+					Prefix: awssdk.String("a/nested/prefix"),
+				}
+				client.On(
+					"ListObjectsV2Pages",
+					input,
+					mock.MatchedBy(func(callback func(res *s3.ListObjectsV2Output, lastPage bool) bool) bool {
+						callback(&s3.ListObjectsV2Output{
+							Contents: []*s3.Object{
+								{
+									Key: awssdk.String("a/nested/prefix/1/state1.tfstate"),
+								},
+								{
+									Key: awssdk.String("a/nested/prefix/2/state2.tfstate"),
+								},
+								{
+									Key: awssdk.String("a/nested/prefix/state3.tfstate"),
+								},
+							},
+						}, false)
+						callback(&s3.ListObjectsV2Output{
+							Contents: []*s3.Object{
+								{
+									Key: awssdk.String("a/nested/prefix/4/4/state4.tfstate"),
+								},
+								{
+									Key: awssdk.String("a/nested/prefix/state5.state"),
+								},
+								{
+									Key: awssdk.String("a/nested/prefix/state6.tfstate.backup"),
+								},
+							},
+						}, true)
+						return true
+					}),
+				).Return(nil)
+			},
+			err: "** not supported for S3 pattern",
+		},
+		{
 			name: "test when invalid config used",
 			config: config.SupplierConfig{
 				Path: "bucket-name",
