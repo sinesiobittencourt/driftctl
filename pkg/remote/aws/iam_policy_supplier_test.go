@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/cloudskiff/driftctl/pkg/remote/aws/repository"
 	remoteerror "github.com/cloudskiff/driftctl/pkg/remote/error"
 
 	resourceaws "github.com/cloudskiff/driftctl/pkg/resource/aws"
@@ -18,11 +19,11 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/iam"
 
-	mocks2 "github.com/cloudskiff/driftctl/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/cloudskiff/driftctl/mocks"
+	mocks2 "github.com/cloudskiff/driftctl/test/mocks"
+
 	"github.com/cloudskiff/driftctl/pkg/resource"
 	"github.com/cloudskiff/driftctl/pkg/terraform"
 	"github.com/cloudskiff/driftctl/test"
@@ -34,14 +35,14 @@ func TestIamPolicySupplier_Resources(t *testing.T) {
 	cases := []struct {
 		test    string
 		dirName string
-		mocks   func(client *mocks.FakeIAM)
+		mocks   func(repo *repository.MockIAMRepository)
 		err     error
 	}{
 		{
 			test:    "no iam custom policies",
 			dirName: "iam_policy_empty",
-			mocks: func(client *mocks.FakeIAM) {
-				client.On(
+			mocks: func(repo *repository.MockIAMRepository) {
+				repo.On(
 					"ListPoliciesPages",
 					&iam.ListPoliciesInput{Scope: aws.String("Local")},
 					mock.Anything,
@@ -52,8 +53,8 @@ func TestIamPolicySupplier_Resources(t *testing.T) {
 		{
 			test:    "iam multiples custom policies",
 			dirName: "iam_policy_multiple",
-			mocks: func(client *mocks.FakeIAM) {
-				client.On("ListPoliciesPages",
+			mocks: func(repo *repository.MockIAMRepository) {
+				repo.On("ListPoliciesPages",
 					&iam.ListPoliciesInput{Scope: aws.String(iam.PolicyScopeTypeLocal)},
 					mock.MatchedBy(func(callback func(res *iam.ListPoliciesOutput, lastPage bool) bool) bool {
 						callback(&iam.ListPoliciesOutput{Policies: []*iam.Policy{
@@ -77,8 +78,8 @@ func TestIamPolicySupplier_Resources(t *testing.T) {
 		{
 			test:    "cannot list iam custom policies",
 			dirName: "iam_policy_empty",
-			mocks: func(client *mocks.FakeIAM) {
-				client.On(
+			mocks: func(repo *repository.MockIAMRepository) {
+				repo.On(
 					"ListPoliciesPages",
 					&iam.ListPoliciesInput{Scope: aws.String("Local")},
 					mock.Anything,
@@ -102,7 +103,7 @@ func TestIamPolicySupplier_Resources(t *testing.T) {
 		}
 
 		t.Run(c.test, func(tt *testing.T) {
-			fakeIam := mocks.FakeIAM{}
+			fakeIam := repository.MockIAMRepository{}
 			c.mocks(&fakeIam)
 
 			provider := mocks2.NewMockedGoldenTFProvider(c.dirName, providerLibrary.Provider(terraform.AWS), shouldUpdate)
