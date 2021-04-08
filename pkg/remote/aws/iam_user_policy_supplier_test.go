@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/cloudskiff/driftctl/pkg/remote/aws/repository"
 	remoteerror "github.com/cloudskiff/driftctl/pkg/remote/error"
 
 	resourceaws "github.com/cloudskiff/driftctl/pkg/resource/aws"
@@ -18,12 +19,11 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/iam"
 
-	"github.com/cloudskiff/driftctl/test/goldenfile"
-	mocks2 "github.com/cloudskiff/driftctl/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/cloudskiff/driftctl/mocks"
+	"github.com/cloudskiff/driftctl/test/goldenfile"
+	mocks2 "github.com/cloudskiff/driftctl/test/mocks"
 
 	"github.com/cloudskiff/driftctl/pkg/resource"
 	"github.com/cloudskiff/driftctl/pkg/terraform"
@@ -35,23 +35,23 @@ func TestIamUserPolicySupplier_Resources(t *testing.T) {
 	cases := []struct {
 		test    string
 		dirName string
-		mocks   func(client *mocks.FakeIAM)
+		mocks   func(repo *repository.MockIAMRepository)
 		err     error
 	}{
 		{
 			test:    "no iam user (no policy)",
 			dirName: "iam_user_policy_empty",
-			mocks: func(client *mocks.FakeIAM) {
-				client.On("ListUsersPages", mock.Anything, mock.Anything).Return(nil)
-				client.On("ListUserPoliciesPages", mock.Anything, mock.Anything).Panic("ListUsersPoliciesPages should not be called when there is no user")
+			mocks: func(repo *repository.MockIAMRepository) {
+				repo.On("ListUsersPages", mock.Anything, mock.Anything).Return(nil)
+				repo.On("ListUserPoliciesPages", mock.Anything, mock.Anything).Panic("ListUsersPoliciesPages should not be called when there is no user")
 			},
 			err: nil,
 		},
 		{
 			test:    "iam multiples users multiple policies",
 			dirName: "iam_user_policy_multiple",
-			mocks: func(client *mocks.FakeIAM) {
-				client.On("ListUsersPages",
+			mocks: func(repo *repository.MockIAMRepository) {
+				repo.On("ListUsersPages",
 					&iam.ListUsersInput{},
 					mock.MatchedBy(func(callback func(res *iam.ListUsersOutput, lastPage bool) bool) bool {
 						callback(&iam.ListUsersOutput{Users: []*iam.User{
@@ -74,7 +74,7 @@ func TestIamUserPolicySupplier_Resources(t *testing.T) {
 				shouldSkipSecond := false
 				shouldSkipThird := false
 
-				client.On("ListUserPoliciesPages",
+				repo.On("ListUserPoliciesPages",
 					&iam.ListUserPoliciesInput{
 						UserName: aws.String("loadbalancer"),
 					},
@@ -94,7 +94,7 @@ func TestIamUserPolicySupplier_Resources(t *testing.T) {
 						return true
 					})).Return(nil).Once()
 
-				client.On("ListUserPoliciesPages",
+				repo.On("ListUserPoliciesPages",
 					&iam.ListUserPoliciesInput{
 						UserName: aws.String("loadbalancer2"),
 					},
@@ -114,7 +114,7 @@ func TestIamUserPolicySupplier_Resources(t *testing.T) {
 						return true
 					})).Return(nil).Once()
 
-				client.On("ListUserPoliciesPages",
+				repo.On("ListUserPoliciesPages",
 					&iam.ListUserPoliciesInput{
 						UserName: aws.String("loadbalancer3"),
 					},
@@ -140,8 +140,8 @@ func TestIamUserPolicySupplier_Resources(t *testing.T) {
 		{
 			test:    "cannot list iam user (no policy)",
 			dirName: "iam_user_policy_empty",
-			mocks: func(client *mocks.FakeIAM) {
-				client.On("ListUsersPages", mock.Anything, mock.Anything).Return(awserr.NewRequestFailure(nil, 403, ""))
+			mocks: func(repo *repository.MockIAMRepository) {
+				repo.On("ListUsersPages", mock.Anything, mock.Anything).Return(awserr.NewRequestFailure(nil, 403, ""))
 			},
 			err: remoteerror.NewResourceEnumerationErrorWithType(awserr.NewRequestFailure(nil, 403, ""), resourceaws.AwsIamUserPolicyResourceType, resourceaws.AwsIamUserResourceType),
 		},
@@ -149,8 +149,8 @@ func TestIamUserPolicySupplier_Resources(t *testing.T) {
 		{
 			test:    "cannot list user policy",
 			dirName: "iam_user_policy_empty",
-			mocks: func(client *mocks.FakeIAM) {
-				client.On("ListUsersPages",
+			mocks: func(repo *repository.MockIAMRepository) {
+				repo.On("ListUsersPages",
 					&iam.ListUsersInput{},
 					mock.MatchedBy(func(callback func(res *iam.ListUsersOutput, lastPage bool) bool) bool {
 						callback(&iam.ListUsersOutput{Users: []*iam.User{
@@ -163,7 +163,7 @@ func TestIamUserPolicySupplier_Resources(t *testing.T) {
 						}}, true)
 						return true
 					})).Return(nil).Once()
-				client.On("ListUserPoliciesPages", mock.Anything, mock.Anything).Return(awserr.NewRequestFailure(nil, 403, ""))
+				repo.On("ListUserPoliciesPages", mock.Anything, mock.Anything).Return(awserr.NewRequestFailure(nil, 403, ""))
 			},
 			err: remoteerror.NewResourceEnumerationError(awserr.NewRequestFailure(nil, 403, ""), resourceaws.AwsIamUserPolicyResourceType),
 		},
@@ -183,7 +183,7 @@ func TestIamUserPolicySupplier_Resources(t *testing.T) {
 		}
 
 		t.Run(c.test, func(tt *testing.T) {
-			fakeIam := mocks.FakeIAM{}
+			fakeIam := repository.MockIAMRepository{}
 			c.mocks(&fakeIam)
 
 			provider := mocks2.NewMockedGoldenTFProvider(c.dirName, providerLibrary.Provider(terraform.AWS), shouldUpdate)
