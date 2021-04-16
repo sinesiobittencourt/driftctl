@@ -7,14 +7,23 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/cloudskiff/driftctl/pkg/analyser"
 	"github.com/cloudskiff/driftctl/pkg/resource"
 	"github.com/sirupsen/logrus"
 )
+
+const DriftIgnoreFilename = ".driftignore"
 
 type DriftIgnore struct {
 	resExclusionList         map[string]struct{} // map[type.id] exists to ignore
 	resExclusionWildcardList map[string]struct{} // map[type.id] exists with wildcard to ignore
 	driftExclusionList       map[string][]string // map[type.id] contains path for drift to ignore
+}
+
+type AnalysisListOptions struct {
+	IncludeUnmanaged bool
+	IncludeDeleted   bool
+	IncludeDrifted   bool
 }
 
 func NewDriftIgnore() *DriftIgnore {
@@ -31,7 +40,7 @@ func NewDriftIgnore() *DriftIgnore {
 }
 
 func (r *DriftIgnore) readIgnoreFile() error {
-	file, err := os.Open(".driftignore")
+	file, err := os.Open(DriftIgnoreFilename)
 	if err != nil {
 		return err
 	}
@@ -141,6 +150,51 @@ RuleCheck:
 		return true
 	}
 	return false
+}
+
+func AnalysisToList(analysis *analyser.Analysis, opts AnalysisListOptions) (int, string) {
+	var list []string
+
+	n := 0
+
+	addResources := func(res ...resource.Resource) {
+		for _, r := range res {
+			list = append(list, fmt.Sprintf("%s.%s", escapeKey(r.TerraformType()), escapeKey(r.TerraformId())))
+		}
+	}
+
+	addDifferences := func(diff ...analyser.Difference) {
+		for _, d := range diff {
+			addResources(d.Res)
+		}
+	}
+
+	if opts.IncludeUnmanaged && analysis.Summary().TotalUnmanaged > 0 {
+		list = append(list, "# Resources not covered by IaC")
+		addResources(analysis.Unmanaged()...)
+		n += analysis.Summary().TotalUnmanaged
+	}
+
+	if opts.IncludeDeleted && analysis.Summary().TotalDeleted > 0 {
+		list = append(list, "# Missing resources")
+		addResources(analysis.Deleted()...)
+		n += analysis.Summary().TotalUnmanaged
+	}
+
+	if opts.IncludeDrifted && analysis.Summary().TotalDrifted > 0 {
+		list = append(list, "# Changed resources")
+		addDifferences(analysis.Differences()...)
+		n += analysis.Summary().TotalUnmanaged
+	}
+
+	return n, strings.Join(list, "\n")
+}
+
+func escapeKey(line string) string {
+	line = strings.ReplaceAll(line, "\\", `\\`)
+	line = strings.ReplaceAll(line, ".", "\\.")
+
+	return line
 }
 
 //Check two strings recursively, pattern can contain wildcard
